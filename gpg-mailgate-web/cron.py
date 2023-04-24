@@ -29,83 +29,83 @@ from email.MIMEText import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 def appendLog(msg):
-	if 'logging' in cfg and 'file' in cfg['logging']:
-		if cfg['logging'].get('file') == "syslog":
-			syslog.syslog(syslog.LOG_INFO | syslog.LOG_MAIL, msg)
-		else:
-			logfile = open(cfg['logging']['file'], 'a')
-			logfile.write(msg + "\n")
-			logfile.close()
+    if 'logging' in cfg and 'file' in cfg['logging']:
+        if cfg['logging'].get('file') == "syslog":
+            syslog.syslog(syslog.LOG_INFO | syslog.LOG_MAIL, msg)
+        else:
+            logfile = open(cfg['logging']['file'], 'a')
+            logfile.write(msg + "\n")
+            logfile.close()
 
 def send_msg( mailsubject, messagefile, recipients = None ):
-	mailbody = file( cfg['cron']['mail_templates'] + "/" + messagefile).read()
-	msg = MIMEMultipart("alternative")
+    mailbody = file( cfg['cron']['mail_templates'] + "/" + messagefile).read()
+    msg = MIMEMultipart("alternative")
 
-	msg["From"] = cfg['cron']['notification_email']
-	msg["To"] = recipients
-	msg["Subject"] = mailsubject
-	
-	msg.attach(MIMEText(mailbody, 'plain'))
-	msg.attach(MIMEText(markdown.markdown(mailbody), 'html'))
-	
-	if 'relay' in cfg and 'host' in cfg['relay'] and 'enc_port' in cfg['relay']:
-		relay = (cfg['relay']['host'], int(cfg['relay']['enc_port']))
-		smtp = smtplib.SMTP(relay[0], relay[1])
-		smtp.sendmail( cfg['cron']['notification_email'], recipients, msg.as_string() )
-	else:
-		appendLog("Could not send mail due to wrong configuration")
+    msg["From"] = cfg['cron']['notification_email']
+    msg["To"] = recipients
+    msg["Subject"] = mailsubject
+    
+    msg.attach(MIMEText(mailbody, 'plain'))
+    msg.attach(MIMEText(markdown.markdown(mailbody), 'html'))
+    
+    if 'relay' in cfg and 'host' in cfg['relay'] and 'enc_port' in cfg['relay']:
+        relay = (cfg['relay']['host'], int(cfg['relay']['enc_port']))
+        smtp = smtplib.SMTP(relay[0], relay[1])
+        smtp.sendmail( cfg['cron']['notification_email'], recipients, msg.as_string() )
+    else:
+        appendLog("Could not send mail due to wrong configuration")
 
 # Read configuration from /etc/gpg-mailgate.conf
 _cfg = RawConfigParser()
 _cfg.read('/etc/gpg-mailgate.conf')
 cfg = dict()
 for sect in _cfg.sections():
-	cfg[sect] = dict()
-	for (name, value) in _cfg.items(sect):
-		cfg[sect][name] = value
+    cfg[sect] = dict()
+    for (name, value) in _cfg.items(sect):
+        cfg[sect][name] = value
 
 if cfg.has_key('database') and cfg['database'].has_key('enabled') and cfg['database']['enabled'] == 'yes' and cfg['database'].has_key('name') and cfg['database'].has_key('host') and cfg['database'].has_key('username') and cfg['database'].has_key('password'):
-	connection = MySQLdb.connect(host = cfg['database']['host'], user = cfg['database']['username'], passwd = cfg['database']['password'], db = cfg['database']['name'], port = 3306)
-	cursor = connection.cursor()
+    connection = MySQLdb.connect(host = cfg['database']['host'], user = cfg['database']['username'], passwd = cfg['database']['password'], db = cfg['database']['name'], port = 3306)
+    cursor = connection.cursor()
 
-	# import keys
-	cursor.execute("SELECT publickey, id, email FROM gpgmw_keys WHERE status = 0 AND confirm = '' LIMIT 100")
-	result_set = cursor.fetchall()
+    # import keys
+    cursor.execute("SELECT publickey, id, email FROM gpgmw_keys WHERE status = 0 AND confirm = '' LIMIT 100")
+    result_set = cursor.fetchall()
 
-	for row in result_set:
-		# delete any other public keys associated with this confirmed email address
-		cursor.execute("DELETE FROM gpgmw_keys WHERE email = %s AND id != %s", (row[2], row[1],))
-		GnuPG.delete_key(cfg['gpg']['keyhome'], row[2])
-		appendLog('Deleted key for <' + row[2] + '> via import request')
+    for row in result_set:
+        # delete any other public keys associated with this confirmed email address
+        cursor.execute("DELETE FROM gpgmw_keys WHERE email = %s AND id != %s", (row[2], row[1],))
+        GnuPG.delete_key(cfg['gpg']['keyhome'], row[2])
+        appendLog('Deleted key for <' + row[2] + '> via import request')
 
-		if row[0].strip(): # we have this so that user can submit blank key to remove any encryption
-			if GnuPG.confirm_key(row[0], row[2]):
-				GnuPG.add_key(cfg['gpg']['keyhome'], row[0]) # import the key to gpg
-				cursor.execute("UPDATE gpgmw_keys SET status = 1 WHERE id = %s", (row[1],)) # mark key as accepted
-				appendLog('Imported key from <' + row[2] + '>')
-				if cfg['cron'].has_key('send_email') and cfg['cron']['send_email'] == 'yes':
-					send_msg( "PGP key registration successful", "registrationSuccess.md", row[2] )
-			else:
-				cursor.execute("DELETE FROM gpgmw_keys WHERE id = %s", (row[1],)) # delete key
-				appendLog('Import confirmation failed for <' + row[2] + '>')
-				if cfg['cron'].has_key('send_email') and cfg['cron']['send_email'] == 'yes':
-					send_msg( "PGP key registration failed", "registrationError.md", row[2] )
-		else:
-			# delete key so we don't continue processing it
-			cursor.execute("DELETE FROM gpgmw_keys WHERE id = %s", (row[1],))
-			if cfg['cron'].has_key('send_email') and cfg['cron']['send_email'] == 'yes':
-				send_msg( "PGP key deleted", "keyDeleted.md", row[2])
+        if row[0].strip(): # we have this so that user can submit blank key to remove any encryption
+            if GnuPG.confirm_key(row[0], row[2]):
+                GnuPG.add_key(cfg['gpg']['keyhome'], row[0]) # import the key to gpg
+                cursor.execute("UPDATE gpgmw_keys SET status = 1 WHERE id = %s", (row[1],)) # mark key as accepted
+                appendLog('Imported key from <' + row[2] + '>')
+                if cfg['cron'].has_key('send_email') and cfg['cron']['send_email'] == 'yes':
+                    send_msg( "PGP key registration successful", "registrationSuccess.md", row[2] )
+            else:
+                cursor.execute("DELETE FROM gpgmw_keys WHERE id = %s", (row[1],)) # delete key
+                appendLog('Import confirmation failed for <' + row[2] + '>')
+                if cfg['cron'].has_key('send_email') and cfg['cron']['send_email'] == 'yes':
+                    send_msg( "PGP key registration failed", "registrationError.md", row[2] )
+        else:
+            # delete key so we don't continue processing it
+            cursor.execute("DELETE FROM gpgmw_keys WHERE id = %s", (row[1],))
+            if cfg['cron'].has_key('send_email') and cfg['cron']['send_email'] == 'yes':
+                send_msg( "PGP key deleted", "keyDeleted.md", row[2])
 
-		connection.commit()
+        connection.commit()
 
-	# delete keys
-	cursor.execute("SELECT email, id FROM gpgmw_keys WHERE status = 2 LIMIT 100")
-	result_set = cursor.fetchall()
+    # delete keys
+    cursor.execute("SELECT email, id FROM gpgmw_keys WHERE status = 2 LIMIT 100")
+    result_set = cursor.fetchall()
 
-	for row in result_set:
-		GnuPG.delete_key(cfg['gpg']['keyhome'], row[0])
-		cursor.execute("DELETE FROM gpgmw_keys WHERE id = %s", (row[1],))
-		appendLog('Deleted key for <' + row[0] + '>')
-		connection.commit()
+    for row in result_set:
+        GnuPG.delete_key(cfg['gpg']['keyhome'], row[0])
+        cursor.execute("DELETE FROM gpgmw_keys WHERE id = %s", (row[1],))
+        appendLog('Deleted key for <' + row[0] + '>')
+        connection.commit()
 else:
-	print "Warning: doing nothing since database settings are not configured!"
+    print "Warning: doing nothing since database settings are not configured!"

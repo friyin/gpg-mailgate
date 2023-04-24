@@ -34,3 +34,11 @@ nosetests.xml
 .project
 .pydevproject
 
+# Caches
+.jython_cache
+
+# Vagrant
+.vagrant
+
+# Ignore local config
+gpg-mailgate.conf
